@@ -13,6 +13,7 @@ import java.lang.reflect.Method;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.compat.auth.ExternalAuthRouter;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.provider.FileProviderHandler;
@@ -74,6 +75,45 @@ public class ActivityManagerCommonProxy {
                 intent.setData(Uri.parse("package:" + BlackBoxCore.getHostPkg()));
             }
 
+            if (ExternalAuthRouter.isDirectProviderDispatch(intent)) {
+                ExternalAuthRouter.clearDirectProviderDispatch(intent);
+                if (ExternalAuthRouter.isTrustedProviderIntent(intent)) {
+                    return method.invoke(who, args);
+                }
+            }
+
+            if (ExternalAuthRouter.isGoogleInteractiveSignInIntent(intent)) {
+                ExternalAuthRouter.normalizeGoogleAuthIntentInGuest(intent);
+            }
+
+            Intent externalAuthBridge = ExternalAuthRouter.createResultBridgeIntent(
+                    intent,
+                    StartActivityCompat.getResultTo(args),
+                    StartActivityCompat.getResultWho(args),
+                    StartActivityCompat.getRequestCode(args),
+                    BActivityThread.getAppPackageName());
+            if (externalAuthBridge != null) {
+                replaceIntent(args, externalAuthBridge);
+                MethodParameterUtils.replaceLastUserId(args);
+                return method.invoke(who, args);
+            }
+
+            String directTrustedPkg = ExternalAuthRouter.getTrustedProviderPackage(intent);
+            if (directTrustedPkg != null) {
+                if (intent.getComponent() == null && intent.getPackage() == null) {
+                    intent.setPackage(directTrustedPkg);
+                }
+                if (ExternalAuthRouter.isGoogleDirectAuthPackage(directTrustedPkg)) {
+                    ExternalAuthRouter.normalizeGoogleAuthIntentInGuest(intent);
+                }
+                if (StartActivityCompat.getResultTo(args) == null || StartActivityCompat.getRequestCode(args) < 0) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                }
+                MethodParameterUtils.replaceFirstAppPkg(args);
+                MethodParameterUtils.replaceLastUserId(args);
+                return method.invoke(who, args);
+            }
+
             // Facebook Custom Tab is external, but its redirect must return to this host
             // and then be relayed into the same virtual guest.
             FacebookLoginCompat.prepareExternalLogin(intent);
@@ -97,22 +137,6 @@ public class ActivityManagerCommonProxy {
                         BActivityThread.getUserId());
                 if (resolveInfo == null) {
                     intent.setPackage(origPackage);
-
-                    if (top.niunaijun.blackbox.compat.auth.ExternalAuthRouter.isGoogleInteractiveSignInIntent(intent)) {
-                        top.niunaijun.blackbox.compat.auth.ExternalAuthRouter.normalizeGoogleAuthIntentInGuest(intent);
-                    }
-
-                    Intent externalAuthBridge = top.niunaijun.blackbox.compat.auth.ExternalAuthRouter.createResultBridgeIntent(
-                            intent,
-                            StartActivityCompat.getResultTo(args),
-                            StartActivityCompat.getResultWho(args),
-                            StartActivityCompat.getRequestCode(args),
-                            BActivityThread.getAppPackageName());
-                    if (externalAuthBridge != null) {
-                        StartActivityCompat.setIntent(args, externalAuthBridge);
-                        return method.invoke(who, args);
-                    }
-
                     return method.invoke(who, args);
                 }
             }
@@ -129,6 +153,21 @@ public class ActivityManagerCommonProxy {
                     StartActivityCompat.getFlags(args),
                     StartActivityCompat.getOptions(args));
             return 0;
+        }
+
+        private void replaceIntent(Object[] args, Intent replacement) {
+            if (args == null || replacement == null) return;
+            int index = BuildCompat.isR() ? 3 : 2;
+            if (index < args.length && args[index] instanceof Intent) {
+                args[index] = replacement;
+                return;
+            }
+            for (int i = 0; i < args.length; i++) {
+                if (args[i] instanceof Intent) {
+                    args[i] = replacement;
+                    return;
+                }
+            }
         }
 
         private Intent getIntent(Object[] args) {

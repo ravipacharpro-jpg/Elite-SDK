@@ -86,6 +86,14 @@ public class MethodParameterUtils {
         return null;
     }
 
+    public static void replaceLastUserId(Object[] args) {
+        if (args == null) return;
+        int index = args.length - 1;
+        if (index >= 0 && args[index] instanceof Integer) {
+            args[index] = BlackBoxCore.getHostUserId();
+        }
+    }
+
     public static String replaceSequenceAppPkg(Object[] args, int sequence) {
         int index = ArrayUtils.indexOf(args, String.class, sequence);
         if (index != -1) {

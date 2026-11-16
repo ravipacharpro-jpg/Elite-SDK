@@ -111,6 +111,13 @@ public final class ExternalAuthRouter {
         }
         String pkg = comp != null ? comp.getPackageName() : intent.getPackage();
         if (!"com.google.android.gms".equals(pkg)) {
+            String action = intent.getAction();
+            if (action != null) {
+                String lowerAct = action.toLowerCase(Locale.US);
+                if (lowerAct.contains("google_sign_in") || lowerAct.contains("gms.auth.api.signin")) {
+                    return true;
+                }
+            }
             return false;
         }
         String action = intent.getAction();
@@ -130,6 +137,20 @@ public final class ExternalAuthRouter {
             }
         }
         return false;
+    }
+
+    public static boolean isDirectProviderDispatch(Intent intent) {
+        return intent != null && intent.getBooleanExtra(EXTRA_DIRECT_PROVIDER_DISPATCH, false);
+    }
+
+    public static void clearDirectProviderDispatch(Intent intent) {
+        if (intent != null) {
+            intent.removeExtra(EXTRA_DIRECT_PROVIDER_DISPATCH);
+        }
+    }
+
+    public static boolean isTrustedProviderIntent(Intent intent) {
+        return getTrustedProviderPackage(intent) != null;
     }
 
     public static boolean isGoogleDirectAuthPackage(String pkg) {
