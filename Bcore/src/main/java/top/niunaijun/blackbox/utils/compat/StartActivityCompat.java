@@ -67,6 +67,12 @@ public class StartActivityCompat {
         return (Intent) args[intentIndex];
     }
 
+    public static void setIntent(Object[] args, Intent intent) {
+        if (args != null && args.length > intentIndex) {
+            args[intentIndex] = intent;
+        }
+    }
+
     public static String getResolvedType(Object[] args) {
         if (args == null || args.length < resolvedTypeIndex) {
             return null;
