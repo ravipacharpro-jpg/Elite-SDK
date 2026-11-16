@@ -269,9 +269,14 @@ public class ActivityStack {
     private Intent startActivityProcess(int userId, Intent intent, ActivityInfo
             info, ActivityRecord record) {
         ProxyActivityRecord stubRecord = new ProxyActivityRecord(userId, info, intent, record);
-        ProcessRecord targetApp = BProcessManagerService.get().startProcessLocked(info.packageName, info.processName, userId, -1, Binder.getCallingPid());
+        String processName = info.processName;
+        if (processName == null || processName.contains(":") || !processName.equals(info.packageName)) {
+            processName = info.packageName;
+        }
+        ProcessRecord targetApp = BProcessManagerService.get().startProcessLocked(info.packageName, processName, userId, -1, Binder.getCallingPid());
         if (targetApp == null) {
-            throw new RuntimeException("Unable to create process, name:" + info.name);
+            Slog.e(TAG, "Process creation failed for " + processName + ", using default process");
+            return getStartStubActivityIntentInner(intent, 0, userId, stubRecord, info);
         }
         return getStartStubActivityIntentInner(intent, targetApp.bpid, userId, stubRecord, info);
     }

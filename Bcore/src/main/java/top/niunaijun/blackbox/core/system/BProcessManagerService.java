@@ -50,6 +50,9 @@ public class BProcessManagerService implements ISystemService {
         ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
         if (info == null)
             return null;
+        if (processName == null || processName.contains(":") || !processName.equals(packageName)) {
+            processName = packageName;
+        }
         ProcessRecord app;
         int buid = BUserHandle.getUid(userId, BPackageManagerService.get().getAppId(packageName));
         synchronized (mProcessLock) {
