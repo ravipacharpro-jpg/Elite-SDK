@@ -34,6 +34,7 @@ import top.niunaijun.blackbox.core.env.AppSystemEnv;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.entity.am.RunningAppProcessInfo;
 import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
+import top.niunaijun.blackbox.compat.auth.ExternalAuthServiceConnectionDelegate;
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 import top.niunaijun.blackbox.fake.delegate.InnerReceiverDelegate;
 import top.niunaijun.blackbox.fake.delegate.ServiceConnectionDelegate;
@@ -344,13 +345,32 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String resolvedType = (String) args[3];
             IServiceConnection connection = (IServiceConnection) args[4];
 
-            
             if (intent == null) {
                 Slog.w(TAG, "BindServiceCommon: Intent is null, proceeding with original call");
                 return method.invoke(who, args);
             }
 
-            
+            if (AppSystemEnv.isOpenPackage(intent)) {
+                try {
+                    top.niunaijun.blackbox.utils.compat.ContextCompat.fix(BActivityThread.getApplication());
+                } catch (Throwable ignored) {
+                }
+
+                if (connection != null) {
+                    IServiceConnection proxy =
+                            ExternalAuthServiceConnectionDelegate.createProxy(connection);
+                    args[4] = proxy;
+                    replaceLoadedApkConnection(connection, proxy);
+                }
+
+                intent.removeExtra("_B_|_UserId");
+                if (callingPackageIndex >= 0 && callingPackageIndex < args.length) {
+                    args[callingPackageIndex] = BlackBoxCore.getHostPkg();
+                }
+                MethodParameterUtils.replaceAllAppPkg(args);
+                MethodParameterUtils.replaceLastUserId(args);
+                return method.invoke(who, args);
+            }
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
@@ -367,13 +387,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
                     args[4] = proxy;
 
-                    WeakReference<?> weakReference = BRLoadedApkServiceDispatcherInnerConnection.get(connection).mDispatcher();
-                    if (weakReference != null) {
-                        BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
-                    }
+                    replaceLoadedApkConnection(connection, proxy);
                 }
 
-                
                 if (proxyIntent != null && proxyIntent.getComponent() != null && 
                     proxyIntent.getComponent().getPackageName().equals(BlackBoxCore.getHostPkg())){
                     int flagsIndex = getFlagsIndex(args);
@@ -394,6 +410,21 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         } catch (Exception e) {
             Slog.e(TAG, "BindServiceCommon: Unexpected error", e);
             return method.invoke(who, args);
+        }
+    }
+
+    private static void replaceLoadedApkConnection(
+            IServiceConnection original, IServiceConnection proxy) {
+        if (original == null || proxy == null) {
+            return;
+        }
+        try {
+            WeakReference<?> weakReference =
+                    BRLoadedApkServiceDispatcherInnerConnection.get(original).mDispatcher();
+            if (weakReference != null && weakReference.get() != null) {
+                BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
+            }
+        } catch (Throwable ignored) {
         }
     }
 

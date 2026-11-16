@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.core.env;
 
 import android.content.ComponentName;
+import android.content.Intent;
 import android.os.Build;
 
 import java.util.ArrayList;
@@ -70,11 +71,21 @@ public class AppSystemEnv {
     }
 
     public static boolean isOpenPackage(String packageName) {
-        return sSystemPackages.contains(packageName);
+        return packageName != null && sSystemPackages.contains(packageName);
     }
 
     public static boolean isOpenPackage(ComponentName componentName) {
         return componentName != null && isOpenPackage(componentName.getPackageName());
+    }
+
+    public static boolean isOpenPackage(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        if (isOpenPackage(intent.getComponent())) {
+            return true;
+        }
+        return isOpenPackage(intent.getPackage());
     }
 
     public static boolean isBlackPackage(String packageName) {
