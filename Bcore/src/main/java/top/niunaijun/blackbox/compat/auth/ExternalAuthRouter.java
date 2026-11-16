@@ -232,7 +232,7 @@ public final class ExternalAuthRouter {
                 if (serverClientId != null) {
                     googleWebBridge.putExtra(EXTRA_GOOGLE_SERVER_CLIENT_ID, serverClientId);
                 }
-                return googleWebBridge;
+                return prepareBridgeForLaunch(googleWebBridge);
             }
         }
 
@@ -266,6 +266,11 @@ public final class ExternalAuthRouter {
                 Intent.FLAG_ACTIVITY_NO_ANIMATION
                         | Intent.FLAG_ACTIVITY_CLEAR_TOP
                         | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        return prepareBridgeForLaunch(bridge);
+    }
+
+    private static Intent prepareBridgeForLaunch(Intent bridge) {
+        top.niunaijun.blackbox.utils.compat.IntentRedirectCompat.collectNestedIntentKeys(bridge);
         return bridge;
     }
 

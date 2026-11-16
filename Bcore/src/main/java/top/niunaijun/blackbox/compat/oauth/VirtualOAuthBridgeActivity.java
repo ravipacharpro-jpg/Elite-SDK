@@ -125,31 +125,34 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                 return;
             }
 
-            try {
-                Intent chooseIntent = null;
-                for (java.lang.reflect.Method m : AccountManager.class.getMethods()) {
-                    if ("newChooseAccountIntent".equals(m.getName())) {
-                        Class<?>[] pTypes = m.getParameterTypes();
-                        if (pTypes.length == 7) {
-                            chooseIntent = (Intent) m.invoke(null, null, null, new String[]{"com.google"}, null, null, null, null);
-                            break;
-                        } else if (pTypes.length == 8) {
-                            chooseIntent = (Intent) m.invoke(null, null, null, new String[]{"com.google"}, false, null, null, null, null);
-                            break;
-                        }
-                    }
-                }
-                if (chooseIntent != null && chooseIntent.resolveActivity(getPackageManager()) != null) {
-                    startActivityForResult(chooseIntent, REQUEST_CHOOSE_GOOGLE_ACCOUNT);
-                    return;
-                }
-            } catch (Throwable ignored) {
-            }
-
-            launchGoogleWebLoginView(serverClientId);
+            launchSystemGoogleAccountPicker(serverClientId);
         } catch (Throwable t) {
             launchGoogleWebLoginView(serverClientId);
         }
+    }
+
+    private void launchSystemGoogleAccountPicker(final String serverClientId) {
+        try {
+            Intent chooseIntent = null;
+            for (java.lang.reflect.Method m : AccountManager.class.getMethods()) {
+                if ("newChooseAccountIntent".equals(m.getName())) {
+                    Class<?>[] pTypes = m.getParameterTypes();
+                    if (pTypes.length == 7) {
+                        chooseIntent = (Intent) m.invoke(null, null, null, new String[]{"com.google"}, null, null, null, null);
+                        break;
+                    } else if (pTypes.length == 8) {
+                        chooseIntent = (Intent) m.invoke(null, null, null, new String[]{"com.google"}, false, null, null, null, null);
+                        break;
+                    }
+                }
+            }
+            if (chooseIntent != null && chooseIntent.resolveActivity(getPackageManager()) != null) {
+                startActivityForResult(chooseIntent, REQUEST_CHOOSE_GOOGLE_ACCOUNT);
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+        launchGoogleWebLoginView(serverClientId);
     }
 
     private void showPremiumGoogleAccountPicker(final Account[] accounts, final String serverClientId) {
@@ -281,9 +284,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                 itemRow.addView(arrow);
 
                 itemRow.setOnClickListener(v -> {
-                    callbackDispatched = true;
-                    android.widget.Toast.makeText(this, "Signing in with " + email + "...", android.widget.Toast.LENGTH_SHORT).show();
-                    finishGoogleWebSignInWithProfile(email, userName);
+                    startAccountAuthFlow(email, userName, serverClientId);
                 });
 
                 LinearLayout.LayoutParams itemLp = new LinearLayout.LayoutParams(
@@ -311,11 +312,20 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             cancelBtn.setOnClickListener(v -> completeBridgeResult(RESULT_CANCELED, null));
             footer.addView(cancelBtn);
 
+            TextView allAccountsBtn = new TextView(this);
+            allAccountsBtn.setText("All Accounts ▾");
+            allAccountsBtn.setTextColor(Color.parseColor("#38BDF8"));
+            allAccountsBtn.setTextSize(13f);
+            allAccountsBtn.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            allAccountsBtn.setPadding(dp(10), dp(8), dp(10), dp(8));
+            allAccountsBtn.setOnClickListener(v -> launchSystemGoogleAccountPicker(serverClientId));
+            footer.addView(allAccountsBtn);
+
             android.view.View spacer = new android.view.View(this);
             footer.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
 
             TextView useAnotherBtn = new TextView(this);
-            useAnotherBtn.setText("+ Other Account (Web)");
+            useAnotherBtn.setText("+ Web Login");
             useAnotherBtn.setTextColor(Color.parseColor("#A855F7"));
             useAnotherBtn.setTextSize(13f);
             useAnotherBtn.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
@@ -480,7 +490,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                     String currentUrl = view.getUrl();
                     if (currentUrl != null && currentUrl.toLowerCase(Locale.US).contains("myaccount.google.com")) {
                         callbackDispatched = true;
-                        finishGoogleWebSignInWithProfile("google.player@gmail.com", "Google Player");
+                        finishGoogleWebSignInWithProfile("google.player@gmail.com", "Google Player", null, null);
                     }
                 }
             });
@@ -488,7 +498,76 @@ public final class VirtualOAuthBridgeActivity extends Activity {
         }
     }
 
+    private void startAccountAuthFlow(final String email, final String displayName, final String serverClientId) {
+        if (callbackDispatched) return;
+        callbackDispatched = true;
+        try {
+            android.widget.Toast.makeText(this, "Connecting " + email + "...", android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Throwable ignored) {
+        }
+
+        new Thread(() -> {
+            String realAuthCode = null;
+            String realIdToken = null;
+            try {
+                Context ctx = getApplicationContext();
+                Account acct = new Account(email, "com.google");
+                String clientId = (serverClientId != null && !serverClientId.trim().isEmpty())
+                        ? serverClientId.trim()
+                        : "646362697320-ng2m2uj8a53arsiqgk7btc3bq9ia3rep.apps.googleusercontent.com";
+
+                try {
+                    Class<?> authUtil = Class.forName("com.google.android.gms.auth.GoogleAuthUtil");
+                    Method getToken = authUtil.getMethod("getToken", Context.class, Account.class, String.class);
+
+                    // 1. Fetch real serverAuthCode using server:client_id scope
+                    try {
+                        Object codeRes = getToken.invoke(null, ctx, acct, "oauth2:server:client_id:" + clientId + ":api_scope:email profile openid");
+                        if (codeRes instanceof String && !((String) codeRes).isEmpty()) {
+                            realAuthCode = (String) codeRes;
+                        }
+                    } catch (Throwable t1) {
+                        try {
+                            Object codeRes2 = getToken.invoke(null, ctx, acct, "oauth2:server:client_id:" + clientId);
+                            if (codeRes2 instanceof String && !((String) codeRes2).isEmpty()) {
+                                realAuthCode = (String) codeRes2;
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+
+                    // 2. Fetch real idToken
+                    try {
+                        Object idRes = getToken.invoke(null, ctx, acct, "audience:server:client_id:" + clientId);
+                        if (idRes instanceof String && !((String) idRes).isEmpty()) {
+                            realIdToken = (String) idRes;
+                        }
+                    } catch (Throwable t2) {
+                        try {
+                            Object idRes2 = getToken.invoke(null, ctx, acct, "oauth2:email profile openid");
+                            if (idRes2 instanceof String && !((String) idRes2).isEmpty()) {
+                                realIdToken = (String) idRes2;
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "GoogleAuthUtil error: " + t.getMessage());
+                }
+            } catch (Throwable ignored) {
+            }
+
+            final String fAuthCode = realAuthCode;
+            final String fIdToken = realIdToken;
+            mainHandler.post(() -> finishGoogleWebSignInWithProfile(email, displayName, fAuthCode, fIdToken));
+        }).start();
+    }
+
     private void finishGoogleWebSignInWithProfile(String email, String displayName) {
+        finishGoogleWebSignInWithProfile(email, displayName, null, null);
+    }
+
+    private void finishGoogleWebSignInWithProfile(String email, String displayName, String realAuthCode, String realIdToken) {
         try {
             String safeEmail = (email != null && email.contains("@")) ? email.trim() : "player@gmail.com";
             String safeName = (displayName != null && !displayName.trim().isEmpty()
@@ -500,6 +579,12 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_EMAIL, safeEmail);
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_NAME, safeName);
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_SUB, subId);
+            if (realAuthCode != null && !realAuthCode.isEmpty()) {
+                resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_AUTH_CODE, realAuthCode);
+            }
+            if (realIdToken != null && !realIdToken.isEmpty()) {
+                resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_ID_TOKEN, realIdToken);
+            }
 
             GoogleSignInTokenHelper.enrichSignInResultIntent(resultIntent, true);
             completeBridgeResult(RESULT_OK, resultIntent);
@@ -529,9 +614,8 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             if (resultCode == RESULT_OK && data != null) {
                 String accountName = data.getStringExtra(AccountManager.KEY_ACCOUNT_NAME);
                 if (accountName != null && accountName.contains("@")) {
-                    callbackDispatched = true;
                     String displayName = accountName.split("@")[0];
-                    finishGoogleWebSignInWithProfile(accountName.trim(), displayName);
+                    startAccountAuthFlow(accountName.trim(), displayName, null);
                     return;
                 }
             }

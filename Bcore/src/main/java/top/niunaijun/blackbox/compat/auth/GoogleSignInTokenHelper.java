@@ -52,11 +52,13 @@ public final class GoogleSignInTokenHelper {
     public static final String EXTRA_WEB_NAME = "top.niunaijun.blackbox.google_web_name";
     public static final String EXTRA_WEB_SUB = "top.niunaijun.blackbox.google_web_sub";
     public static final String EXTRA_WEB_ID_TOKEN = "top.niunaijun.blackbox.google_web_id_token";
+    public static final String EXTRA_WEB_AUTH_CODE = "top.niunaijun.blackbox.google_web_auth_code";
 
     private static volatile String sLastWebEmail;
     private static volatile String sLastWebName;
     private static volatile String sLastWebSub;
     private static volatile String sLastWebIdToken;
+    private static volatile String sLastWebAuthCode;
 
     private GoogleSignInTokenHelper() {
     }
@@ -347,6 +349,7 @@ public final class GoogleSignInTokenHelper {
                 sLastWebName = data.getStringExtra(EXTRA_WEB_NAME);
                 sLastWebSub = data.getStringExtra(EXTRA_WEB_SUB);
                 sLastWebIdToken = data.getStringExtra(EXTRA_WEB_ID_TOKEN);
+                sLastWebAuthCode = data.getStringExtra(EXTRA_WEB_AUTH_CODE);
             }
 
             boolean hasSignInExtra = data.hasExtra("signInAccount")
@@ -635,10 +638,13 @@ public final class GoogleSignInTokenHelper {
                         photo != null ? photo.toString() : null, sLastServerClientId);
             }
             String authCode = curAuthCode != null && !curAuthCode.isEmpty()
-                    ? curAuthCode : ("4/0A" + Base64.encodeToString(
-                    ((email != null ? email : "user") + ":" + System.currentTimeMillis())
-                            .getBytes(StandardCharsets.UTF_8),
-                    Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING));
+                    ? curAuthCode
+                    : (sLastWebAuthCode != null && !sLastWebAuthCode.isEmpty()
+                            ? sLastWebAuthCode
+                            : ("4/0A" + Base64.encodeToString(
+                            ((email != null ? email : "user") + ":" + System.currentTimeMillis())
+                                    .getBytes(StandardCharsets.UTF_8),
+                            Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING)));
 
             Class<?> cls = account.getClass();
             while (cls != null && cls != Object.class) {
