@@ -392,16 +392,7 @@ public final class GoogleSignInTokenHelper {
                     data.putExtra("googleSignInAccount", (Parcelable) googleSignInAccount);
                 }
                 data.removeExtra("errorCode");
-                try {
-                    Class<?> statusClass = Class.forName("com.google.android.gms.common.api.Status", false, guestCl);
-                    Field successField = statusClass.getDeclaredField("RESULT_SUCCESS");
-                    successField.setAccessible(true);
-                    Object successStatus = successField.get(null);
-                    if (successStatus instanceof Parcelable) {
-                        data.putExtra("googleSignInStatus", (Parcelable) successStatus);
-                    }
-                } catch (Throwable ignored) {
-                }
+                data.removeExtra("googleSignInStatus");
                 return true;
             }
         } catch (Throwable t) {
@@ -641,10 +632,7 @@ public final class GoogleSignInTokenHelper {
                     ? curAuthCode
                     : (sLastWebAuthCode != null && !sLastWebAuthCode.isEmpty()
                             ? sLastWebAuthCode
-                            : ("4/0A" + Base64.encodeToString(
-                            ((email != null ? email : "user") + ":" + System.currentTimeMillis())
-                                    .getBytes(StandardCharsets.UTF_8),
-                            Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING)));
+                            : null);
 
             Class<?> cls = account.getClass();
             while (cls != null && cls != Object.class) {
@@ -664,7 +652,11 @@ public final class GoogleSignInTokenHelper {
                             continue;
                         }
                         if (probe.equals(invokeStringGetter(account, "getServerAuthCode"))) {
-                            f.set(account, authCode);
+                            if (authCode != null) {
+                                f.set(account, authCode);
+                            } else {
+                                f.set(account, null);
+                            }
                             continue;
                         }
                         f.set(account, null);

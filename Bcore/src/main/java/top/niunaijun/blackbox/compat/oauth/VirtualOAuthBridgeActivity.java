@@ -512,49 +512,110 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             String realAuthCode = null;
             String realIdToken = null;
             try {
-                Context ctx = getApplicationContext();
                 Account acct = new Account(email, "com.google");
                 String clientId = (serverClientId != null && !serverClientId.trim().isEmpty())
                         ? serverClientId.trim()
                         : "646362697320-ng2m2uj8a53arsiqgk7btc3bq9ia3rep.apps.googleusercontent.com";
 
+                // Method A: Native Android AccountManager (no external libraries needed, runs on background thread)
                 try {
-                    Class<?> authUtil = Class.forName("com.google.android.gms.auth.GoogleAuthUtil");
-                    Method getToken = authUtil.getMethod("getToken", Context.class, Account.class, String.class);
-
-                    // 1. Fetch real serverAuthCode using server:client_id scope
-                    try {
-                        Object codeRes = getToken.invoke(null, ctx, acct, "oauth2:server:client_id:" + clientId + ":api_scope:email profile openid");
-                        if (codeRes instanceof String && !((String) codeRes).isEmpty()) {
-                            realAuthCode = (String) codeRes;
-                        }
-                    } catch (Throwable t1) {
+                    AccountManager am = AccountManager.get(VirtualOAuthBridgeActivity.this);
+                    String[] codeScopes = new String[]{
+                            "oauth2:server:client_id:" + clientId + ":api_scope:email profile openid",
+                            "oauth2:server:client_id:" + clientId,
+                            "audience:server:client_id:" + clientId,
+                            "oauth2:https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
+                    };
+                    for (String scope : codeScopes) {
                         try {
-                            Object codeRes2 = getToken.invoke(null, ctx, acct, "oauth2:server:client_id:" + clientId);
-                            if (codeRes2 instanceof String && !((String) codeRes2).isEmpty()) {
-                                realAuthCode = (String) codeRes2;
+                            String token = am.blockingGetAuthToken(acct, scope, true);
+                            if (token != null && !token.trim().isEmpty()) {
+                                Log.i(TAG, "AccountManager returned token for " + scope + ": " + token);
+                                if (token.contains(".")) {
+                                    if (realIdToken == null) realIdToken = token;
+                                } else {
+                                    if (realAuthCode == null) realAuthCode = token;
+                                }
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "AccountManager scope " + scope + " failed: " + t.getMessage());
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                // Method B: GoogleAuthUtil via BGMI/GMS ClassLoader
+                if (realAuthCode == null || realIdToken == null) {
+                    try {
+                        ClassLoader cl = getClassLoader();
+                        try {
+                            Context bgmiCtx = createPackageContext("com.pubg.imobile",
+                                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                            if (bgmiCtx != null && bgmiCtx.getClassLoader() != null) {
+                                cl = bgmiCtx.getClassLoader();
                             }
                         } catch (Throwable ignored) {
                         }
-                    }
 
-                    // 2. Fetch real idToken
-                    try {
-                        Object idRes = getToken.invoke(null, ctx, acct, "audience:server:client_id:" + clientId);
-                        if (idRes instanceof String && !((String) idRes).isEmpty()) {
-                            realIdToken = (String) idRes;
-                        }
-                    } catch (Throwable t2) {
+                        Class<?> authUtil = Class.forName("com.google.android.gms.auth.GoogleAuthUtil", false, cl);
+                        Method getTokenWithAccount = null;
                         try {
-                            Object idRes2 = getToken.invoke(null, ctx, acct, "oauth2:email profile openid");
-                            if (idRes2 instanceof String && !((String) idRes2).isEmpty()) {
-                                realIdToken = (String) idRes2;
-                            }
+                            getTokenWithAccount = authUtil.getMethod("getToken", Context.class, Account.class, String.class);
                         } catch (Throwable ignored) {
                         }
+                        Method getTokenWithString = null;
+                        try {
+                            getTokenWithString = authUtil.getMethod("getToken", Context.class, String.class, String.class);
+                        } catch (Throwable ignored) {
+                        }
+
+                        if (getTokenWithAccount != null || getTokenWithString != null) {
+                            Context ctx = getApplicationContext();
+                            // Fetch real serverAuthCode
+                            if (realAuthCode == null) {
+                                String[] authScopes = new String[]{
+                                        "oauth2:server:client_id:" + clientId + ":api_scope:email profile openid",
+                                        "oauth2:server:client_id:" + clientId
+                                };
+                                for (String s : authScopes) {
+                                    try {
+                                        Object res = (getTokenWithAccount != null)
+                                                ? getTokenWithAccount.invoke(null, ctx, acct, s)
+                                                : getTokenWithString.invoke(null, ctx, email, s);
+                                        if (res instanceof String && !((String) res).isEmpty()) {
+                                            realAuthCode = (String) res;
+                                            Log.i(TAG, "GoogleAuthUtil fetched real authCode: " + realAuthCode);
+                                            break;
+                                        }
+                                    } catch (Throwable ignored) {
+                                    }
+                                }
+                            }
+
+                            // Fetch real idToken
+                            if (realIdToken == null) {
+                                String[] idScopes = new String[]{
+                                        "audience:server:client_id:" + clientId,
+                                        "oauth2:email profile openid"
+                                };
+                                for (String s : idScopes) {
+                                    try {
+                                        Object res = (getTokenWithAccount != null)
+                                                ? getTokenWithAccount.invoke(null, ctx, acct, s)
+                                                : getTokenWithString.invoke(null, ctx, email, s);
+                                        if (res instanceof String && !((String) res).isEmpty()) {
+                                            realIdToken = (String) res;
+                                            Log.i(TAG, "GoogleAuthUtil fetched real idToken: " + realIdToken);
+                                            break;
+                                        }
+                                    } catch (Throwable ignored) {
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        Log.w(TAG, "GoogleAuthUtil reflect error: " + t.getMessage());
                     }
-                } catch (Throwable t) {
-                    Log.w(TAG, "GoogleAuthUtil error: " + t.getMessage());
                 }
             } catch (Throwable ignored) {
             }
