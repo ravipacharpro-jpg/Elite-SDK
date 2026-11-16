@@ -71,7 +71,16 @@ public class BProcessManagerService implements ISystemService {
                         return app;
                     }
                 }
-                bpid = getUsingBPidL();
+                if (callingPid > 0) {
+                    String stubProc = getProcessName(BlackBoxCore.getContext(), callingPid);
+                    int callingBpid = parseBPid(stubProc);
+                    if (callingBpid >= 0) {
+                        bpid = callingBpid;
+                    }
+                }
+                if (bpid == -1) {
+                    bpid = getUsingBPidL();
+                }
                 Slog.d(TAG, "init bUid = " + buid + ", bPid = " + bpid);
             }
             if (bpid == -1) {

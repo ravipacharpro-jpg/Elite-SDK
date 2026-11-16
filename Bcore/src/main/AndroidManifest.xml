@@ -447,13 +447,21 @@
             android:name="top.niunaijun.blackbox.core.system.DaemonService"
             android:exported="false"
             android:process="@string/black_box_service_name"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keep BlackBox container core services alive" />
+        </service>
 
         <service
             android:name="top.niunaijun.blackbox.core.system.DaemonService$DaemonInnerService"
             android:exported="false"
             android:process="@string/black_box_service_name"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keep BlackBox container core services alive" />
+        </service>
 
         <activity
             android:name=".app.LauncherActivity"
