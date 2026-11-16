@@ -66,19 +66,42 @@ public final class GoogleSignInTokenHelper {
     }
 
     public static void prepareOutboundSignInIntent(Intent intent, String virtualPkg, String hostPkg) {
+        prepareOutboundSignInIntent(intent, null, virtualPkg, hostPkg);
+    }
+
+    public static void prepareOutboundSignInIntent(Intent intent, ClassLoader cl, String virtualPkg, String hostPkg) {
         if (intent == null) return;
         sLastVirtualPackage = virtualPkg;
         try {
-            ClassLoader guestCl = (BActivityThread.getApplication() != null
-                    && BActivityThread.getApplication().getClassLoader() != null)
-                    ? BActivityThread.getApplication().getClassLoader() : null;
-            if (guestCl != null) {
-                intent.setExtrasClassLoader(guestCl);
+            if (cl == null) {
+                cl = (BActivityThread.getApplication() != null
+                        && BActivityThread.getApplication().getClassLoader() != null)
+                        ? BActivityThread.getApplication().getClassLoader() : null;
             }
-            if (!intent.hasExtra("config")) {
+            if (cl != null) {
+                intent.setExtrasClassLoader(cl);
+            }
+            Bundle extras = intent.getExtras();
+            if (extras == null) {
                 return;
             }
-            Parcelable originalConfig = intent.getParcelableExtra("config");
+            if (cl != null) {
+                extras.setClassLoader(cl);
+            }
+
+            Bundle configBundle = null;
+            Parcelable originalConfig = null;
+            Object configObj = extras.get("config");
+            if (configObj instanceof Bundle) {
+                configBundle = (Bundle) configObj;
+                if (cl != null) {
+                    configBundle.setClassLoader(cl);
+                }
+                originalConfig = configBundle.getParcelable("config");
+            } else if (configObj instanceof Parcelable) {
+                originalConfig = (Parcelable) configObj;
+            }
+
             if (originalConfig == null) {
                 return;
             }
@@ -103,9 +126,15 @@ public final class GoogleSignInTokenHelper {
                 }
                 cfgClass = cfgClass.getSuperclass();
             }
-            intent.putExtra("config", (Parcelable) targetConfig);
+
+            if (configBundle != null) {
+                configBundle.putParcelable("config", (Parcelable) targetConfig);
+                intent.putExtra("config", configBundle);
+            } else {
+                intent.putExtra("config", (Parcelable) targetConfig);
+            }
         } catch (Throwable t) {
-            Log.w(TAG, "prepareOutboundSignInIntent failed: " + t.getClass().getSimpleName());
+            Log.w(TAG, "prepareOutboundSignInIntent failed: " + t.getClass().getSimpleName(), t);
         }
     }
 

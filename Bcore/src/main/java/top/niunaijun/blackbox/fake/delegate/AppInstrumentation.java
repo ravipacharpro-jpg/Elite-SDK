@@ -250,17 +250,26 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         String name = activity.getClass().getName();
         if ("com.google.android.gms.auth.api.signin.internal.SignInHubActivity".equals(name)) {
             try {
+                ClassLoader cl = activity.getClassLoader();
                 Intent intent = activity.getIntent();
                 if (intent != null) {
-                    if (BActivityThread.getApplication() != null) {
-                        intent.setExtrasClassLoader(
-                                BActivityThread.getApplication().getClassLoader());
+                    if (cl != null) {
+                        intent.setExtrasClassLoader(cl);
+                    }
+                    Bundle extras = intent.getExtras();
+                    if (extras != null && cl != null) {
+                        extras.setClassLoader(cl);
+                        Bundle configBundle = extras.getBundle("config");
+                        if (configBundle != null) {
+                            configBundle.setClassLoader(cl);
+                        }
                     }
                     if ("com.google.android.gms.auth.NO_IMPL".equals(intent.getAction())) {
                         intent.setAction("com.google.android.gms.auth.GOOGLE_SIGN_IN");
                     }
                     top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.prepareOutboundSignInIntent(
                             intent,
+                            cl,
                             BActivityThread.getAppPackageName(),
                             BlackBoxCore.getHostPkg());
                 }
@@ -269,9 +278,30 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         }
     }
 
+    private static void fixBundleClassLoader(Activity activity, Bundle bundle) {
+        if (activity == null || bundle == null) return;
+        ClassLoader cl = activity.getClassLoader();
+        if (cl == null) return;
+        try {
+            bundle.setClassLoader(cl);
+            for (String key : bundle.keySet()) {
+                try {
+                    Object val = bundle.get(key);
+                    if (val instanceof Bundle) {
+                        ((Bundle) val).setClassLoader(cl);
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+    }
+
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
         checkActivity(activity);
+        fixBundleClassLoader(activity, icicle);
+        if (activity != null && activity.getIntent() != null) {
+            fixBundleClassLoader(activity, activity.getIntent().getExtras());
+        }
         prepareGoogleSignInHubBeforeCreate(activity);
         super.callActivityOnCreate(activity, icicle, persistentState);
         FacebookWebViewViewportFix.applyIfNeeded(activity);
@@ -281,10 +311,20 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         checkActivity(activity);
+        fixBundleClassLoader(activity, icicle);
+        if (activity != null && activity.getIntent() != null) {
+            fixBundleClassLoader(activity, activity.getIntent().getExtras());
+        }
         prepareGoogleSignInHubBeforeCreate(activity);
         super.callActivityOnCreate(activity, icicle);
         FacebookWebViewViewportFix.applyIfNeeded(activity);
         tuneTwitterLoginWebView(activity);
+    }
+
+    @Override
+    public void callActivityOnRestoreInstanceState(Activity activity, Bundle savedInstanceState) {
+        fixBundleClassLoader(activity, savedInstanceState);
+        super.callActivityOnRestoreInstanceState(activity, savedInstanceState);
     }
 
     @Override
