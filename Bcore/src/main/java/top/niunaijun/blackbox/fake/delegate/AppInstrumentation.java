@@ -334,6 +334,22 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     }
 
     @Override
+    public void callActivityOnActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
+        if (activity != null && data != null) {
+            try {
+                ClassLoader cl = activity.getClassLoader();
+                data.setExtrasClassLoader(cl);
+                boolean enriched = top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.enrichSignInResultIntent(data, requestCode == 40962);
+                if (requestCode == 40962 || enriched || data.hasExtra("signInAccount") || data.hasExtra("googleSignInAccount")) {
+                    resultCode = Activity.RESULT_OK;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        super.callActivityOnActivityResult(activity, requestCode, resultCode, data);
+    }
+
+    @Override
     public void callApplicationOnCreate(Application app) {
         checkHCallback();
         super.callApplicationOnCreate(app);

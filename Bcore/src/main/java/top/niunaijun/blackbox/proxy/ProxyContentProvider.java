@@ -73,8 +73,14 @@ public class ProxyContentProvider extends ContentProvider {
 
             Intent data = extras.getParcelable(top.niunaijun.blackbox.compat.auth.ExternalAuthRouter.EXTRA_RESULT_DATA);
             if (data != null && BActivityThread.getApplication() != null) {
-                data.setExtrasClassLoader(
-                        BActivityThread.getApplication().getClassLoader());
+                ClassLoader cl = BActivityThread.getApplication().getClassLoader();
+                data.setExtrasClassLoader(cl);
+                top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.enrichSignInResultIntent(data, requestCode == 40962);
+                if (data.hasExtra(top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.EXTRA_WEB_EMAIL)
+                        || data.hasExtra("googleSignInAccount")
+                        || data.hasExtra("signInAccount")) {
+                    resultCode = android.app.Activity.RESULT_OK;
+                }
             }
 
             top.niunaijun.blackbox.fake.frameworks.BActivityManager.get().sendActivityResult(

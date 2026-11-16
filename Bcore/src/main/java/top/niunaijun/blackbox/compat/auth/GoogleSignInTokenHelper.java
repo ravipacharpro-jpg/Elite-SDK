@@ -389,7 +389,16 @@ public final class GoogleSignInTokenHelper {
                     data.putExtra("googleSignInAccount", (Parcelable) googleSignInAccount);
                 }
                 data.removeExtra("errorCode");
-                data.removeExtra("googleSignInStatus");
+                try {
+                    Class<?> statusClass = Class.forName("com.google.android.gms.common.api.Status", false, guestCl);
+                    Field successField = statusClass.getDeclaredField("RESULT_SUCCESS");
+                    successField.setAccessible(true);
+                    Object successStatus = successField.get(null);
+                    if (successStatus instanceof Parcelable) {
+                        data.putExtra("googleSignInStatus", (Parcelable) successStatus);
+                    }
+                } catch (Throwable ignored) {
+                }
                 return true;
             }
         } catch (Throwable t) {
@@ -486,9 +495,23 @@ public final class GoogleSignInTokenHelper {
     }
 
     private static Object wrapInSignInAccount(ClassLoader cl, Object googleSignInAccount) {
+        if (cl == null || googleSignInAccount == null) return null;
         try {
-            Class<?> wrapperClass = Class.forName(
-                    "com.google.android.gms.auth.api.signin.internal.SignInAccount", false, cl);
+            Class<?> wrapperClass = null;
+            try {
+                wrapperClass = Class.forName(
+                        "com.google.android.gms.auth.api.signin.SignInAccount", false, cl);
+            } catch (Throwable ignored) {
+            }
+            if (wrapperClass == null) {
+                try {
+                    wrapperClass = Class.forName(
+                            "com.google.android.gms.auth.api.signin.internal.SignInAccount", false, cl);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (wrapperClass == null) return null;
+
             String email = invokeStringGetter(googleSignInAccount, "getEmail");
             if (email == null || email.isEmpty()) email = "player@gmail.com";
             String id = invokeStringGetter(googleSignInAccount, "getId");
@@ -499,6 +522,28 @@ public final class GoogleSignInTokenHelper {
                 Class<?>[] pt = c.getParameterTypes();
                 if (pt.length == 3 && pt[0] == String.class && pt[2] == String.class) {
                     return c.newInstance(email, googleSignInAccount, id);
+                }
+            }
+
+            for (Constructor<?> c : wrapperClass.getDeclaredConstructors()) {
+                c.setAccessible(true);
+                Class<?>[] pt = c.getParameterTypes();
+                Object[] args = new Object[pt.length];
+                boolean matched = false;
+                for (int i = 0; i < pt.length; i++) {
+                    if (pt[i].isAssignableFrom(googleSignInAccount.getClass())) {
+                        args[i] = googleSignInAccount;
+                        matched = true;
+                    } else if (pt[i] == String.class) {
+                        args[i] = email;
+                    } else if (pt[i] == int.class || pt[i] == Integer.class) {
+                        args[i] = 0;
+                    } else {
+                        args[i] = null;
+                    }
+                }
+                if (matched) {
+                    return c.newInstance(args);
                 }
             }
         } catch (Throwable ignored) {

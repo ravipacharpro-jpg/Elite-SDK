@@ -195,25 +195,31 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         sendActivityResult(resultTo, resultWho, requestCode, null, 0);
     }
 
-    public void sendActivityResult(final IBinder resultTo, final String resultWho, final int requestCode, final Intent data, final int resultCode) {
+    public void sendActivityResult(final IBinder resultTo, final String resultWho, final int requestCode, final Intent data, int resultCode) {
         if (resultTo == null || requestCode < 0) {
             return;
         }
-        Runnable deliverTask = () -> {
-            try {
-                if (data != null && BActivityThread.getApplication() != null) {
-                    data.setExtrasClassLoader(BActivityThread.getApplication().getClassLoader());
-                    top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.enrichSignInResultIntent(data);
+        boolean isSignInHub = (requestCode == 40962);
+        try {
+            if (data != null && BActivityThread.getApplication() != null) {
+                data.setExtrasClassLoader(BActivityThread.getApplication().getClassLoader());
+                boolean enriched = top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.enrichSignInResultIntent(data, isSignInHub);
+                if (enriched || data.hasExtra("signInAccount") || data.hasExtra("googleSignInAccount")
+                        || data.hasExtra(top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.EXTRA_WEB_EMAIL)) {
+                    resultCode = android.app.Activity.RESULT_OK;
                 }
-            } catch (Throwable ignored) {
             }
+        } catch (Throwable ignored) {
+        }
+        final int finalResultCode = resultCode;
+        Runnable deliverTask = () -> {
             try {
                 Activity activity = findActivityByToken(resultTo);
                 if (activity != null) {
-                    if (dispatchActivityResultReflectively(activity, resultWho, requestCode, resultCode, data)) {
+                    if (dispatchActivityResultReflectively(activity, resultWho, requestCode, finalResultCode, data)) {
                         return;
                     }
-                    black.android.app.BRActivity.get(activity).onActivityResult(requestCode, resultCode, data);
+                    black.android.app.BRActivity.get(activity).onActivityResult(requestCode, finalResultCode, data);
                     return;
                 }
             } catch (Throwable ignored) {
@@ -221,7 +227,7 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
             try {
                 Object mainThread = top.niunaijun.blackbox.BlackBoxCore.mainThread();
                 black.android.app.BRActivityThread.get(mainThread).sendActivityResult(
-                        resultTo, resultWho, requestCode, resultCode, data);
+                        resultTo, resultWho, requestCode, finalResultCode, data);
             } catch (Throwable ignored) {
             }
         };
