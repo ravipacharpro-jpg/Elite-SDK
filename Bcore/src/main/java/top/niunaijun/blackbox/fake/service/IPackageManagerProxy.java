@@ -157,8 +157,15 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return null;
             }
             
-            if ("com.android.vending".equals(packageName)) {
-                return createFakeGooglePlayServicesPackageInfo();
+            if (isGoogleAuthPackage(packageName)) {
+                try {
+                    PackageInfo realInfo = (PackageInfo) method.invoke(who, args);
+                    if (realInfo != null) {
+                        return realInfo;
+                    }
+                } catch (Throwable ignored) {
+                }
+                return createFakeGooglePackageInfo(packageName);
             }
             
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -183,53 +190,67 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             }
             return null;
         }
-        
-    private PackageInfo createFakeGooglePlayServicesPackageInfo() {
-        PackageInfo packageInfo = new PackageInfo();
-        packageInfo.packageName = "com.android.vending";
-        packageInfo.versionName = "53.6.15-34";
-        packageInfo.versionCode = 85361540;
-        
-        ApplicationInfo appInfo = new ApplicationInfo();
-        appInfo.packageName = "com.android.vending";
-        appInfo.name = "Google Play Store";
-        appInfo.flags = ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_HAS_CODE;
-        appInfo.uid = 10003; 
-        appInfo.sourceDir = "/system/priv-app/Phonesky/Phonesky.apk";
-        appInfo.dataDir = "/data/user/0/com.android.vending";
-        packageInfo.applicationInfo = appInfo;
-        
-        try {
-            android.content.pm.Signature fakeSignature = new android.content.pm.Signature(
-                "30820268308201d1a003020102020446795486300d06092a864886f70d0101050500305" +
-                "7310b30090603550406130255533110300e0603550408130743616c69666f726e69613" +
-                "11630140603550407130d4d6f756e7461696e205669657731143012060355040a130b4" +
-                "76f6f676c6520496e633110300e06035504031307416e64726f6964301e160d3038303" +
-                "431353232343330375a1d160d3335303930313232343330375a3057310b30090603550" +
-                "406130255533110300e0603550408130743616c69666f726e696131163014060355040" +
-                "7130d4d6f756e7461696e205669657731143012060355040a130b476f6f676c65204a6" +
-                "e633110300e06035504031307416e64726f6964"
-            );
-            packageInfo.signatures = new android.content.pm.Signature[]{fakeSignature};
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                android.os.Parcel parcel = android.os.Parcel.obtain();
-                try {
-                    parcel.writeTypedArray(packageInfo.signatures, 0);
-                    parcel.setDataPosition(0);
-                    packageInfo.signingInfo = android.content.pm.SigningInfo.CREATOR.createFromParcel(parcel);
-                } finally {
-                    parcel.recycle();
-                }
-            }
-        } catch (Exception e) {
-            Slog.e(TAG, "Failed to inject Android 13+ signingInfo for Phonesky", e);
+
+        private static boolean isGoogleAuthPackage(String pkg) {
+            return "com.google.android.gms".equals(pkg)
+                    || "com.android.vending".equals(pkg)
+                    || "com.google.android.gsf".equals(pkg)
+                    || "com.google.android.gsf.login".equals(pkg)
+                    || "com.google.android.play.games".equals(pkg);
         }
         
-        Slog.d(TAG, "GetPackageInfo: Google Play Store Signature Hook Applied Successfully.");
-        return packageInfo;
-    }
-
+        private static PackageInfo createFakeGooglePackageInfo(String packageName) {
+            PackageInfo packageInfo = new PackageInfo();
+            String targetPkg = packageName != null ? packageName : "com.google.android.gms";
+            packageInfo.packageName = targetPkg;
+            if ("com.android.vending".equals(targetPkg)) {
+                packageInfo.versionName = "40.7.29-31 [0] [PR] 629631720";
+                packageInfo.versionCode = 84072910;
+            } else {
+                packageInfo.versionName = "24.16.16 (190400-629570188)";
+                packageInfo.versionCode = 241616038;
+            }
+            
+            ApplicationInfo appInfo = new ApplicationInfo();
+            appInfo.packageName = targetPkg;
+            appInfo.name = "com.android.vending".equals(targetPkg) ? "Google Play Store" : "Google Play services";
+            appInfo.flags = ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_HAS_CODE;
+            appInfo.uid = 10003; 
+            appInfo.sourceDir = "/system/priv-app/" + targetPkg + "/" + targetPkg + ".apk";
+            appInfo.dataDir = "/data/user/0/" + targetPkg;
+            appInfo.enabled = true;
+            packageInfo.applicationInfo = appInfo;
+            
+            try {
+                android.content.pm.Signature fakeSignature = new android.content.pm.Signature(
+                    "30820268308201d1a003020102020446795486300d06092a864886f70d0101050500305" +
+                    "7310b30090603550406130255533110300e0603550408130743616c69666f726e69613" +
+                    "11630140603550407130d4d6f756e7461696e205669657731143012060355040a130b4" +
+                    "76f6f676c6520496e633110300e06035504031307416e64726f6964301e160d3038303" +
+                    "431353232343330375a1d160d3335303930313232343330375a3057310b30090603550" +
+                    "406130255533110300e0603550408130743616c69666f726e696131163014060355040" +
+                    "7130d4d6f756e7461696e205669657731143012060355040a130b476f6f676c65204a6" +
+                    "e633110300e06035504031307416e64726f6964"
+                );
+                packageInfo.signatures = new android.content.pm.Signature[]{fakeSignature};
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    android.os.Parcel parcel = android.os.Parcel.obtain();
+                    try {
+                        parcel.writeTypedArray(packageInfo.signatures, 0);
+                        parcel.setDataPosition(0);
+                        packageInfo.signingInfo = android.content.pm.SigningInfo.CREATOR.createFromParcel(parcel);
+                    } finally {
+                        parcel.recycle();
+                    }
+                }
+            } catch (Exception e) {
+                Slog.e(TAG, "Failed to inject Android 13+ signingInfo for Google package", e);
+            }
+            
+            Slog.d(TAG, "GetPackageInfo: Google package info provided for " + targetPkg);
+            return packageInfo;
+        }
     } // End GetPackageInfo class
 
     @ProxyMethod("getProviderInfo")
@@ -342,6 +363,23 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (isFacebookNativePackage(packageName)) {
                 Slog.d(TAG, "Facebook web-only: hiding getApplicationInfo for " + packageName);
                 return null;
+            }
+
+            if (isGoogleAuthPackage(packageName)) {
+                try {
+                    ApplicationInfo realInfo = (ApplicationInfo) method.invoke(who, args);
+                    if (realInfo != null) return realInfo;
+                } catch (Throwable ignored) {
+                }
+                ApplicationInfo fakeApp = new ApplicationInfo();
+                fakeApp.packageName = packageName;
+                fakeApp.name = "com.android.vending".equals(packageName) ? "Google Play Store" : "Google Play services";
+                fakeApp.flags = ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_HAS_CODE;
+                fakeApp.uid = 10003;
+                fakeApp.sourceDir = "/system/priv-app/" + packageName + "/" + packageName + ".apk";
+                fakeApp.dataDir = "/data/user/0/" + packageName;
+                fakeApp.enabled = true;
+                return fakeApp;
             }
 
             ApplicationInfo applicationInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, flags, BlackBoxCore.getUserId());

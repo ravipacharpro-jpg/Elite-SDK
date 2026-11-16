@@ -27,6 +27,15 @@ public class AppSystemEnv {
         sSystemPackages.add("com.android.talkback");
         sSystemPackages.add("com.miui.gallery");
 
+        // Real Google authentication stack. These packages are never cloned or
+        // rewritten: virtual apps may discover and call the copies installed on
+        // the phone, so provider-side package/signature verification stays intact.
+        sSystemPackages.add("com.google.android.gms");
+        sSystemPackages.add("com.google.android.gsf");
+        sSystemPackages.add("com.google.android.gsf.login");
+        sSystemPackages.add("com.android.vending");
+        sSystemPackages.add("com.google.android.play.games");
+
         // External login/browser packages used by OAuth flows.
         sSystemPackages.add("com.android.chrome");
         sSystemPackages.add("com.facebook.katana");

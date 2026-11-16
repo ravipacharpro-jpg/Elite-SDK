@@ -245,9 +245,34 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         return count;
     }
 
+    private static void prepareGoogleSignInHubBeforeCreate(Activity activity) {
+        if (activity == null) return;
+        String name = activity.getClass().getName();
+        if ("com.google.android.gms.auth.api.signin.internal.SignInHubActivity".equals(name)) {
+            try {
+                Intent intent = activity.getIntent();
+                if (intent != null) {
+                    if (BActivityThread.getApplication() != null) {
+                        intent.setExtrasClassLoader(
+                                BActivityThread.getApplication().getClassLoader());
+                    }
+                    if ("com.google.android.gms.auth.NO_IMPL".equals(intent.getAction())) {
+                        intent.setAction("com.google.android.gms.auth.GOOGLE_SIGN_IN");
+                    }
+                    top.niunaijun.blackbox.compat.auth.GoogleSignInTokenHelper.prepareOutboundSignInIntent(
+                            intent,
+                            BActivityThread.getAppPackageName(),
+                            BlackBoxCore.getHostPkg());
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
         checkActivity(activity);
+        prepareGoogleSignInHubBeforeCreate(activity);
         super.callActivityOnCreate(activity, icicle, persistentState);
         FacebookWebViewViewportFix.applyIfNeeded(activity);
         tuneTwitterLoginWebView(activity);
@@ -256,6 +281,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         checkActivity(activity);
+        prepareGoogleSignInHubBeforeCreate(activity);
         super.callActivityOnCreate(activity, icicle);
         FacebookWebViewViewportFix.applyIfNeeded(activity);
         tuneTwitterLoginWebView(activity);
