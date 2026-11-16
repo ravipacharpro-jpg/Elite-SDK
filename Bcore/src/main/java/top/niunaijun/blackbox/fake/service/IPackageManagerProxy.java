@@ -41,6 +41,14 @@ import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 public class IPackageManagerProxy extends BinderInvocationStub {
     public static final String TAG = "PackageManagerStub";
 
+    public static boolean isGoogleAuthPackage(String pkg) {
+        return "com.google.android.gms".equals(pkg)
+                || "com.android.vending".equals(pkg)
+                || "com.google.android.gsf".equals(pkg)
+                || "com.google.android.gsf.login".equals(pkg)
+                || "com.google.android.play.games".equals(pkg);
+    }
+
     public IPackageManagerProxy() {
         super(BRActivityThread.get().sPackageManager().asBinder());
     }
@@ -191,14 +199,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             return null;
         }
 
-        private static boolean isGoogleAuthPackage(String pkg) {
-            return "com.google.android.gms".equals(pkg)
-                    || "com.android.vending".equals(pkg)
-                    || "com.google.android.gsf".equals(pkg)
-                    || "com.google.android.gsf.login".equals(pkg)
-                    || "com.google.android.play.games".equals(pkg);
-        }
-        
         private static PackageInfo createFakeGooglePackageInfo(String packageName) {
             PackageInfo packageInfo = new PackageInfo();
             String targetPkg = packageName != null ? packageName : "com.google.android.gms";
