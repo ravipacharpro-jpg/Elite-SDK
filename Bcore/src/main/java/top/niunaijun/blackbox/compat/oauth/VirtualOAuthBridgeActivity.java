@@ -75,7 +75,6 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             virtualPackage = launchIntent.getStringExtra(
                     ExternalAuthRouter.EXTRA_VIRTUAL_PACKAGE);
             userId = launchIntent.getIntExtra(ExternalAuthRouter.EXTRA_USER_ID, -1);
-            resultBridgeMode = true;
             if (!validResultTarget(launchIntent)) {
                 finish();
                 return;
