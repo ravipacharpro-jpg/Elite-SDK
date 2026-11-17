@@ -644,7 +644,6 @@ public final class GoogleSignInTokenHelper {
                     try {
                         f.setAccessible(true);
                         Object original = f.get(account);
-                        if (original != null) continue;
 
                         String probe = "__elite_probe__";
                         f.set(account, probe);
@@ -660,7 +659,7 @@ public final class GoogleSignInTokenHelper {
                             }
                             continue;
                         }
-                        f.set(account, null);
+                        f.set(account, original);
                     } catch (Throwable ignored) {
                     }
                 }

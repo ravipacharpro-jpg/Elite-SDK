@@ -25,7 +25,13 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import android.util.Base64;
+import org.json.JSONObject;
+
 import java.lang.reflect.Method;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 import top.niunaijun.blackbox.compat.auth.ExternalAuthRouter;
@@ -129,7 +135,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
 
             launchSystemGoogleAccountPicker(serverClientId);
         } catch (Throwable t) {
-            launchGoogleWebLoginView(serverClientId);
+            launchGoogleWebOAuthFlow(serverClientId, null);
         }
     }
 
@@ -154,7 +160,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             }
         } catch (Throwable ignored) {
         }
-        launchGoogleWebLoginView(serverClientId);
+        launchGoogleWebOAuthFlow(serverClientId, null);
     }
 
     private void showPremiumGoogleAccountPicker(final Account[] accounts, final String serverClientId) {
@@ -286,12 +292,11 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                 itemRow.addView(arrow);
 
                 itemRow.setOnClickListener(v -> {
-                    callbackDispatched = true;
                     try {
                         android.widget.Toast.makeText(this, "Signing in with " + email + "...", android.widget.Toast.LENGTH_SHORT).show();
                     } catch (Throwable ignored) {
                     }
-                    finishGoogleWebSignInWithProfile(email, userName);
+                    launchGoogleWebOAuthFlow(serverClientId, email);
                 });
 
                 LinearLayout.LayoutParams itemLp = new LinearLayout.LayoutParams(
@@ -337,7 +342,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             useAnotherBtn.setTextSize(13f);
             useAnotherBtn.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             useAnotherBtn.setPadding(dp(10), dp(8), dp(10), dp(8));
-            useAnotherBtn.setOnClickListener(v -> launchGoogleWebLoginView(serverClientId));
+            useAnotherBtn.setOnClickListener(v -> launchGoogleWebOAuthFlow(serverClientId, null));
             footer.addView(useAnotherBtn);
 
             root.addView(footer, new LinearLayout.LayoutParams(
@@ -345,15 +350,47 @@ public final class VirtualOAuthBridgeActivity extends Activity {
 
             setContentView(root);
         } catch (Throwable t) {
-            launchGoogleWebLoginView(serverClientId);
+            launchGoogleWebOAuthFlow(serverClientId, null);
         }
     }
 
-    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
-    private void launchGoogleWebLoginView(final String serverClientId) {
+    private void expandWindowForWebView() {
         try {
-            final String googleLoginUrl =
-                    "https://accounts.google.com/AccountChooser?hl=en&continue=https%3A%2F%2Fmyaccount.google.com%2F";
+            android.view.Window window = getWindow();
+            if (window != null) {
+                android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+                int minDim = Math.min(dm.widthPixels, dm.heightPixels);
+                int maxDim = Math.max(dm.widthPixels, dm.heightPixels);
+                android.view.WindowManager.LayoutParams params = window.getAttributes();
+                params.width = (int) (minDim * 0.95f);
+                params.height = (int) (maxDim * 0.85f);
+                window.setAttributes(params);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @SuppressLint({"SetJavaScriptEnabled"})
+    private void launchGoogleWebOAuthFlow(final String serverClientId, final String emailHint) {
+        try {
+            expandWindowForWebView();
+
+            final String clientId = (serverClientId != null && !serverClientId.trim().isEmpty())
+                    ? serverClientId.trim() : "646362697320-ng2m2uj8a53arsiqgk7btc3bq9ia3rep.apps.googleusercontent.com";
+            final String clientIdPrefix = clientId.contains(".") ? clientId.substring(0, clientId.indexOf('.')) : clientId;
+            final String redirectUri = "com.googleusercontent.apps." + clientIdPrefix + ":/oauth2redirect";
+
+            StringBuilder urlBuilder = new StringBuilder("https://accounts.google.com/o/oauth2/v2/auth?");
+            urlBuilder.append("client_id=").append(URLEncoder.encode(clientId, "UTF-8"));
+            urlBuilder.append("&response_type=").append(URLEncoder.encode("code id_token", "UTF-8"));
+            urlBuilder.append("&scope=").append(URLEncoder.encode("openid email profile", "UTF-8"));
+            urlBuilder.append("&redirect_uri=").append(URLEncoder.encode(redirectUri, "UTF-8"));
+            urlBuilder.append("&nonce=").append(System.currentTimeMillis());
+            if (emailHint != null && !emailHint.trim().isEmpty()) {
+                urlBuilder.append("&login_hint=").append(URLEncoder.encode(emailHint.trim(), "UTF-8"));
+            }
+            final String googleOAuthUrl = urlBuilder.toString();
+            Log.d(TAG, "Launching Google OAuth URL: " + googleOAuthUrl);
 
             LinearLayout root = new LinearLayout(this);
             root.setOrientation(LinearLayout.VERTICAL);
@@ -372,20 +409,12 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             header.setPadding(padH, padV, padH, padV);
 
             TextView titleView = new TextView(this);
-            titleView.setText("Google Web Sign-In");
+            titleView.setText(emailHint != null ? "Signing in (" + emailHint.split("@")[0] + ")..." : "Google Sign-In");
             titleView.setTextColor(Color.WHITE);
             titleView.setTextSize(14.5f);
             LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             header.addView(titleView, titleLp);
-
-            TextView continueBtn = new TextView(this);
-            continueBtn.setText("Continue");
-            continueBtn.setTextColor(Color.parseColor("#30D158"));
-            continueBtn.setTextSize(13f);
-            continueBtn.setPadding(dp(10), dp(4), dp(10), dp(4));
-            continueBtn.setOnClickListener(v -> extractGoogleAccountFromWebViewAndFinish(embeddedWebView, true));
-            header.addView(continueBtn);
 
             TextView closeBtn = new TextView(this);
             closeBtn.setText("Close");
@@ -414,7 +443,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             settings.setUseWideViewPort(true);
             settings.setLoadWithOverviewMode(true);
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-            // Pure Chrome Mobile User-Agent so accounts.google.com never blocks with 403 disallowed_useragent
+            // Chrome Mobile User-Agent so Google accounts endpoint allows standard authentication
             settings.setUserAgentString(
                     "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Mobile Safari/537.36");
 
@@ -423,17 +452,6 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                 cm.setAcceptCookie(true);
                 cm.setAcceptThirdPartyCookies(embeddedWebView, true);
             }
-
-            embeddedWebView.addJavascriptInterface(new Object() {
-                @android.webkit.JavascriptInterface
-                public void onGoogleProfileExtracted(String email, String name) {
-                    if (callbackDispatched) return;
-                    if (email != null && email.contains("@")) {
-                        callbackDispatched = true;
-                        mainHandler.post(() -> finishGoogleWebSignInWithProfile(email.trim(), name));
-                    }
-                }
-            }, "EliteGoogleBridge");
 
             embeddedWebView.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -446,14 +464,18 @@ public final class VirtualOAuthBridgeActivity extends Activity {
 
             embeddedWebView.setWebViewClient(new WebViewClient() {
                 @Override
-                public void onPageFinished(WebView view, String url) {
-                    super.onPageFinished(view, url);
-                    if (url == null || callbackDispatched) return;
-                    String lowerUrl = url.toLowerCase(Locale.US);
-                    if (lowerUrl.startsWith("https://myaccount.google.com")
-                            || lowerUrl.startsWith("https://www.google.com/settings")
-                            || lowerUrl.contains("myaccount.google.com/?utm_source=")) {
-                        extractGoogleAccountFromWebViewAndFinish(view, true);
+                public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                    if (handleOAuthRedirectUrl(url, emailHint)) {
+                        return true;
+                    }
+                    return super.shouldOverrideUrlLoading(view, url);
+                }
+
+                @Override
+                public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                    super.onPageStarted(view, url, favicon);
+                    if (handleOAuthRedirectUrl(url, emailHint)) {
+                        view.stopLoading();
                     }
                 }
             });
@@ -464,65 +486,120 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
             setContentView(root);
-
-            java.util.Map<String, String> extraHeaders = new java.util.HashMap<>();
-            extraHeaders.put("X-Requested-With", "com.android.chrome");
-            embeddedWebView.loadUrl(googleLoginUrl, extraHeaders);
-        } catch (Throwable ignored) {
+            embeddedWebView.loadUrl(googleOAuthUrl);
+        } catch (Throwable t) {
+            Log.e(TAG, "launchGoogleWebOAuthFlow failed", t);
             completeBridgeResult(RESULT_CANCELED, null);
         }
     }
 
-    private void extractGoogleAccountFromWebViewAndFinish(final WebView view, final boolean allowFallbackOnComplete) {
-        if (view == null || callbackDispatched) return;
-        try {
-            String js = "(function(){"
-                    + "try{"
-                    + "var bodyText = document.body ? document.body.innerText : '';"
-                    + "var htmlText = document.documentElement ? document.documentElement.innerHTML : '';"
-                    + "var match = bodyText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+[.][a-zA-Z]{2,}/);"
-                    + "if(!match) match = htmlText.match(/[a-zA-Z0-9._%+-]+@gmail[.]com/);"
-                    + "var email = match ? match[0] : '';"
-                    + "var name = document.title ? document.title.replace(' - Google Account','').trim() : '';"
-                    + "if(email){ EliteGoogleBridge.onGoogleProfileExtracted(email, name); return email; }"
-                    + "}catch(e){} return '';"
-                    + "})();";
-            view.evaluateJavascript(js, value -> {
-                if (callbackDispatched) return;
-                String cleaned = value != null ? value.replace(String.valueOf((char) 34), "").trim() : "";
-                if (cleaned.contains("@")) {
-                    callbackDispatched = true;
-                    finishGoogleWebSignInWithProfile(cleaned, cleaned.split("@")[0]);
-                } else if (allowFallbackOnComplete) {
-                    String currentUrl = view.getUrl();
-                    if (currentUrl != null && currentUrl.toLowerCase(Locale.US).contains("myaccount.google.com")) {
-                        callbackDispatched = true;
-                        finishGoogleWebSignInWithProfile("google.player@gmail.com", "Google Player");
+    private boolean handleOAuthRedirectUrl(String url, String fallbackEmail) {
+        if (url == null || callbackDispatched) return false;
+        String lower = url.toLowerCase(Locale.US);
+        if (lower.startsWith("com.googleusercontent.apps") || lower.contains(":/oauth2redirect")) {
+            callbackDispatched = true;
+            try {
+                Log.d(TAG, "Intercepted Google OAuth redirect: " + url);
+                String idToken = extractParamFromUrl(url, "id_token");
+                String authCode = extractParamFromUrl(url, "code");
+                String error = extractParamFromUrl(url, "error");
+
+                if (error != null) {
+                    Log.w(TAG, "Google OAuth returned error: " + error);
+                    completeBridgeResult(RESULT_CANCELED, null);
+                    return true;
+                }
+
+                String email = null;
+                String name = null;
+                String sub = null;
+
+                if (idToken != null && idToken.contains(".")) {
+                    try {
+                        String[] parts = idToken.split("\\.");
+                        if (parts.length >= 2) {
+                            byte[] decoded = Base64.decode(parts[1], Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
+                            JSONObject json = new JSONObject(new String(decoded, StandardCharsets.UTF_8));
+                            email = json.optString("email", null);
+                            name = json.optString("name", null);
+                            sub = json.optString("sub", null);
+                        }
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Failed to parse JWT payload: " + t.getMessage());
                     }
                 }
-            });
-        } catch (Throwable ignored) {
+
+                if (email == null) email = fallbackEmail;
+                if (name == null && email != null && email.contains("@")) name = email.split("@")[0];
+
+                finishGoogleWebSignInWithTokens(email, name, sub, idToken, authCode);
+                return true;
+            } catch (Throwable t) {
+                Log.e(TAG, "handleOAuthRedirectUrl error", t);
+                completeBridgeResult(RESULT_CANCELED, null);
+                return true;
+            }
         }
+        return false;
     }
 
-    private void finishGoogleWebSignInWithProfile(String email, String displayName) {
+    private static String extractParamFromUrl(String url, String param) {
+        if (url == null || param == null) return null;
+        try {
+            String queryAndFragment = url;
+            int qIdx = url.indexOf('?');
+            int fIdx = url.indexOf('#');
+            int startIdx = (qIdx != -1) ? qIdx : fIdx;
+            if (startIdx != -1) {
+                queryAndFragment = url.substring(startIdx + 1);
+            }
+            String[] tokens = queryAndFragment.split("[&#]");
+            for (String token : tokens) {
+                int eq = token.indexOf('=');
+                if (eq > 0) {
+                    String k = token.substring(0, eq).trim();
+                    if (param.equalsIgnoreCase(k)) {
+                        String v = token.substring(eq + 1).trim();
+                        return URLDecoder.decode(v, "UTF-8");
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private void finishGoogleWebSignInWithTokens(String email, String displayName, String subId, String idToken, String authCode) {
         try {
             String safeEmail = (email != null && email.contains("@")) ? email.trim() : "player@gmail.com";
             String safeName = (displayName != null && !displayName.trim().isEmpty()
                     && !displayName.contains("Google Account"))
                     ? displayName.trim() : safeEmail.split("@")[0];
-            String subId = String.valueOf(Math.abs((long) safeEmail.hashCode()) + 100000000000000000L);
+            String safeSub = (subId != null && !subId.trim().isEmpty())
+                    ? subId.trim() : String.valueOf(Math.abs((long) safeEmail.hashCode()) + 100000000000000000L);
+
+            Log.i(TAG, "Google sign-in complete. Email: " + safeEmail + ", hasIdToken: " + (idToken != null) + ", hasAuthCode: " + (authCode != null));
 
             Intent resultIntent = new Intent();
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_EMAIL, safeEmail);
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_NAME, safeName);
-            resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_SUB, subId);
+            resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_SUB, safeSub);
+            if (idToken != null && !idToken.trim().isEmpty()) {
+                resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_ID_TOKEN, idToken.trim());
+            }
+            if (authCode != null && !authCode.trim().isEmpty()) {
+                resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_AUTH_CODE, authCode.trim());
+            }
 
             GoogleSignInTokenHelper.enrichSignInResultIntent(resultIntent, true);
             completeBridgeResult(RESULT_OK, resultIntent);
         } catch (Throwable ignored) {
             completeBridgeResult(RESULT_CANCELED, null);
         }
+    }
+
+    private void finishGoogleWebSignInWithProfile(String email, String displayName) {
+        finishGoogleWebSignInWithTokens(email, displayName, null, null, null);
     }
 
     private void launchExternalProvider(Intent bridgeIntent) {
@@ -546,9 +623,8 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             if (resultCode == RESULT_OK && data != null) {
                 String accountName = data.getStringExtra(AccountManager.KEY_ACCOUNT_NAME);
                 if (accountName != null && accountName.contains("@")) {
-                    callbackDispatched = true;
-                    String displayName = accountName.split("@")[0];
-                    finishGoogleWebSignInWithProfile(accountName.trim(), displayName);
+                    String serverClientId = getIntent() != null ? getIntent().getStringExtra(ExternalAuthRouter.EXTRA_GOOGLE_SERVER_CLIENT_ID) : null;
+                    launchGoogleWebOAuthFlow(serverClientId, accountName.trim());
                     return;
                 }
             }
