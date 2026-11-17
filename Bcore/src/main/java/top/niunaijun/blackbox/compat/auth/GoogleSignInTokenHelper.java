@@ -644,7 +644,6 @@ public final class GoogleSignInTokenHelper {
                     try {
                         f.setAccessible(true);
                         Object original = f.get(account);
-                        if (original != null) continue;
 
                         String probe = "__fbox_probe__";
                         f.set(account, probe);
@@ -656,7 +655,7 @@ public final class GoogleSignInTokenHelper {
                             f.set(account, authCode);
                             continue;
                         }
-                        f.set(account, null);
+                        f.set(account, original);
                     } catch (Throwable ignored) {
                     }
                 }
@@ -669,10 +668,12 @@ public final class GoogleSignInTokenHelper {
     private static String tryFetchRealGoogleToken(String email) {
         if (email == null || email.trim().isEmpty()) return null;
         try {
-            Context ctx = BActivityThread.getApplication();
-            if (ctx == null) ctx = BlackBoxCore.getContext();
+            Context ctx = BlackBoxCore.getContext();
+            if (ctx == null) ctx = BActivityThread.getApplication();
             if (ctx == null) return null;
-            ClassLoader cl = ctx.getClassLoader();
+            ClassLoader cl = (BActivityThread.getApplication() != null && BActivityThread.getApplication().getClassLoader() != null)
+                    ? BActivityThread.getApplication().getClassLoader()
+                    : ctx.getClassLoader();
             Class<?> authUtil = Class.forName("com.google.android.gms.auth.GoogleAuthUtil", false, cl);
             Method getToken = authUtil.getMethod("getToken", Context.class, Account.class, String.class);
             Account acct = new Account(email, "com.google");

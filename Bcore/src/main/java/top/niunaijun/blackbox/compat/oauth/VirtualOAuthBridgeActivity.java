@@ -81,7 +81,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             }
             String serverClientId = launchIntent.getStringExtra(
                     ExternalAuthRouter.EXTRA_GOOGLE_SERVER_CLIENT_ID);
-            launchGoogleWebLoginView(serverClientId);
+            launchGoogleNativeAccountPickerOrWebView(serverClientId);
             return;
         }
 
