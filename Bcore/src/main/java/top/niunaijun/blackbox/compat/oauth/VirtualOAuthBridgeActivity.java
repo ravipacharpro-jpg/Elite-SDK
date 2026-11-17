@@ -286,7 +286,12 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                 itemRow.addView(arrow);
 
                 itemRow.setOnClickListener(v -> {
-                    startAccountAuthFlow(email, userName, serverClientId);
+                    callbackDispatched = true;
+                    try {
+                        android.widget.Toast.makeText(this, "Signing in with " + email + "...", android.widget.Toast.LENGTH_SHORT).show();
+                    } catch (Throwable ignored) {
+                    }
+                    finishGoogleWebSignInWithProfile(email, userName);
                 });
 
                 LinearLayout.LayoutParams itemLp = new LinearLayout.LayoutParams(
@@ -492,7 +497,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
                     String currentUrl = view.getUrl();
                     if (currentUrl != null && currentUrl.toLowerCase(Locale.US).contains("myaccount.google.com")) {
                         callbackDispatched = true;
-                        finishGoogleWebSignInWithProfile("google.player@gmail.com", "Google Player", null, null);
+                        finishGoogleWebSignInWithProfile("google.player@gmail.com", "Google Player");
                     }
                 }
             });
@@ -500,137 +505,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
         }
     }
 
-    private void startAccountAuthFlow(final String email, final String displayName, final String serverClientId) {
-        if (callbackDispatched) return;
-        callbackDispatched = true;
-        try {
-            android.widget.Toast.makeText(this, "Connecting " + email + "...", android.widget.Toast.LENGTH_SHORT).show();
-        } catch (Throwable ignored) {
-        }
-
-        new Thread(() -> {
-            String realAuthCode = null;
-            String realIdToken = null;
-            try {
-                Account acct = new Account(email, "com.google");
-                String clientId = (serverClientId != null && !serverClientId.trim().isEmpty())
-                        ? serverClientId.trim()
-                        : "646362697320-ng2m2uj8a53arsiqgk7btc3bq9ia3rep.apps.googleusercontent.com";
-
-                // Method A: Native Android AccountManager (no external libraries needed, runs on background thread)
-                try {
-                    AccountManager am = AccountManager.get(VirtualOAuthBridgeActivity.this);
-                    String[] codeScopes = new String[]{
-                            "oauth2:server:client_id:" + clientId + ":api_scope:email profile openid",
-                            "oauth2:server:client_id:" + clientId,
-                            "audience:server:client_id:" + clientId,
-                            "oauth2:https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
-                    };
-                    for (String scope : codeScopes) {
-                        try {
-                            String token = am.blockingGetAuthToken(acct, scope, true);
-                            if (token != null && !token.trim().isEmpty()) {
-                                Log.i(TAG, "AccountManager returned token for " + scope + ": " + token);
-                                if (token.contains(".")) {
-                                    if (realIdToken == null) realIdToken = token;
-                                } else {
-                                    if (realAuthCode == null) realAuthCode = token;
-                                }
-                            }
-                        } catch (Throwable t) {
-                            Log.w(TAG, "AccountManager scope " + scope + " failed: " + t.getMessage());
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-
-                // Method B: GoogleAuthUtil via BGMI/GMS ClassLoader
-                if (realAuthCode == null || realIdToken == null) {
-                    try {
-                        ClassLoader cl = getClassLoader();
-                        try {
-                            Context bgmiCtx = createPackageContext("com.pubg.imobile",
-                                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
-                            if (bgmiCtx != null && bgmiCtx.getClassLoader() != null) {
-                                cl = bgmiCtx.getClassLoader();
-                            }
-                        } catch (Throwable ignored) {
-                        }
-
-                        Class<?> authUtil = Class.forName("com.google.android.gms.auth.GoogleAuthUtil", false, cl);
-                        Method getTokenWithAccount = null;
-                        try {
-                            getTokenWithAccount = authUtil.getMethod("getToken", Context.class, Account.class, String.class);
-                        } catch (Throwable ignored) {
-                        }
-                        Method getTokenWithString = null;
-                        try {
-                            getTokenWithString = authUtil.getMethod("getToken", Context.class, String.class, String.class);
-                        } catch (Throwable ignored) {
-                        }
-
-                        if (getTokenWithAccount != null || getTokenWithString != null) {
-                            Context ctx = getApplicationContext();
-                            // Fetch real serverAuthCode
-                            if (realAuthCode == null) {
-                                String[] authScopes = new String[]{
-                                        "oauth2:server:client_id:" + clientId + ":api_scope:email profile openid",
-                                        "oauth2:server:client_id:" + clientId
-                                };
-                                for (String s : authScopes) {
-                                    try {
-                                        Object res = (getTokenWithAccount != null)
-                                                ? getTokenWithAccount.invoke(null, ctx, acct, s)
-                                                : getTokenWithString.invoke(null, ctx, email, s);
-                                        if (res instanceof String && !((String) res).isEmpty()) {
-                                            realAuthCode = (String) res;
-                                            Log.i(TAG, "GoogleAuthUtil fetched real authCode: " + realAuthCode);
-                                            break;
-                                        }
-                                    } catch (Throwable ignored) {
-                                    }
-                                }
-                            }
-
-                            // Fetch real idToken
-                            if (realIdToken == null) {
-                                String[] idScopes = new String[]{
-                                        "audience:server:client_id:" + clientId,
-                                        "oauth2:email profile openid"
-                                };
-                                for (String s : idScopes) {
-                                    try {
-                                        Object res = (getTokenWithAccount != null)
-                                                ? getTokenWithAccount.invoke(null, ctx, acct, s)
-                                                : getTokenWithString.invoke(null, ctx, email, s);
-                                        if (res instanceof String && !((String) res).isEmpty()) {
-                                            realIdToken = (String) res;
-                                            Log.i(TAG, "GoogleAuthUtil fetched real idToken: " + realIdToken);
-                                            break;
-                                        }
-                                    } catch (Throwable ignored) {
-                                    }
-                                }
-                            }
-                        }
-                    } catch (Throwable t) {
-                        Log.w(TAG, "GoogleAuthUtil reflect error: " + t.getMessage());
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-
-            final String fAuthCode = realAuthCode;
-            final String fIdToken = realIdToken;
-            mainHandler.post(() -> finishGoogleWebSignInWithProfile(email, displayName, fAuthCode, fIdToken));
-        }).start();
-    }
-
     private void finishGoogleWebSignInWithProfile(String email, String displayName) {
-        finishGoogleWebSignInWithProfile(email, displayName, null, null);
-    }
-
-    private void finishGoogleWebSignInWithProfile(String email, String displayName, String realAuthCode, String realIdToken) {
         try {
             String safeEmail = (email != null && email.contains("@")) ? email.trim() : "player@gmail.com";
             String safeName = (displayName != null && !displayName.trim().isEmpty()
@@ -642,12 +517,6 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_EMAIL, safeEmail);
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_NAME, safeName);
             resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_SUB, subId);
-            if (realAuthCode != null && !realAuthCode.isEmpty()) {
-                resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_AUTH_CODE, realAuthCode);
-            }
-            if (realIdToken != null && !realIdToken.isEmpty()) {
-                resultIntent.putExtra(GoogleSignInTokenHelper.EXTRA_WEB_ID_TOKEN, realIdToken);
-            }
 
             GoogleSignInTokenHelper.enrichSignInResultIntent(resultIntent, true);
             completeBridgeResult(RESULT_OK, resultIntent);
@@ -677,8 +546,9 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             if (resultCode == RESULT_OK && data != null) {
                 String accountName = data.getStringExtra(AccountManager.KEY_ACCOUNT_NAME);
                 if (accountName != null && accountName.contains("@")) {
+                    callbackDispatched = true;
                     String displayName = accountName.split("@")[0];
-                    startAccountAuthFlow(accountName.trim(), displayName, null);
+                    finishGoogleWebSignInWithProfile(accountName.trim(), displayName);
                     return;
                 }
             }

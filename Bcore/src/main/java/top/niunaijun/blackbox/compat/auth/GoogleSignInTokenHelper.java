@@ -427,9 +427,9 @@ public final class GoogleSignInTokenHelper {
                 }
             }
 
-            String token = (sLastWebIdToken != null && sLastWebIdToken.contains("."))
+            String token = (sLastWebIdToken != null && isJwtToken(sLastWebIdToken))
                     ? sLastWebIdToken : tryFetchRealGoogleToken(email);
-            if (token == null || !token.contains(".")) {
+            if (token == null || !isJwtToken(token)) {
                 token = buildCompatibleIdToken(subId, email, displayName, displayName, "", null, sLastServerClientId);
             }
 
@@ -623,8 +623,9 @@ public final class GoogleSignInTokenHelper {
             String family = invokeStringGetter(account, "getFamilyName");
             Uri photo = invokeUriGetter(account, "getPhotoUrl");
 
-            String token = tryFetchRealGoogleToken(email);
-            if (token == null || !token.contains(".")) {
+            String token = (sLastWebIdToken != null && isJwtToken(sLastWebIdToken))
+                    ? sLastWebIdToken : tryFetchRealGoogleToken(email);
+            if (token == null || !isJwtToken(token)) {
                 token = buildCompatibleIdToken(id, email, name, given, family,
                         photo != null ? photo.toString() : null, sLastServerClientId);
             }
@@ -758,5 +759,11 @@ public final class GoogleSignInTokenHelper {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static boolean isJwtToken(String s) {
+        if (s == null) return false;
+        String[] parts = s.split("\\.");
+        return parts.length == 3 && s.startsWith("eyJ");
     }
 }
