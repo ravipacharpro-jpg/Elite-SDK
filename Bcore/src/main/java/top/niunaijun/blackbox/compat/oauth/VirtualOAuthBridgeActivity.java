@@ -135,7 +135,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
 
             launchSystemGoogleAccountPicker(serverClientId);
         } catch (Throwable t) {
-            launchGoogleWebOAuthFlow(serverClientId, null);
+            launchGoogleWebLoginView(serverClientId);
         }
     }
 
@@ -160,7 +160,7 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             }
         } catch (Throwable ignored) {
         }
-        launchGoogleWebOAuthFlow(serverClientId, null);
+        launchGoogleWebLoginView(serverClientId);
     }
 
     private void showPremiumGoogleAccountPicker(final Account[] accounts, final String serverClientId) {
