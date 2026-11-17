@@ -75,13 +75,14 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             virtualPackage = launchIntent.getStringExtra(
                     ExternalAuthRouter.EXTRA_VIRTUAL_PACKAGE);
             userId = launchIntent.getIntExtra(ExternalAuthRouter.EXTRA_USER_ID, -1);
+            resultBridgeMode = true;
             if (!validResultTarget(launchIntent)) {
                 finish();
                 return;
             }
             String serverClientId = launchIntent.getStringExtra(
                     ExternalAuthRouter.EXTRA_GOOGLE_SERVER_CLIENT_ID);
-            launchGoogleNativeAccountPickerOrWebView(serverClientId);
+            launchGoogleWebLoginView(serverClientId);
             return;
         }
 
@@ -108,12 +109,16 @@ public final class VirtualOAuthBridgeActivity extends Activity {
             if (window != null) {
                 window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                 window.setGravity(Gravity.CENTER);
-                android.view.WindowManager.LayoutParams params = window.getAttributes();
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
                 android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-                int minDim = Math.min(dm.widthPixels, dm.heightPixels);
-                params.width = (int) (minDim * 0.90f);
-                params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                window.setAttributes(params);
+                int targetW = Math.min(dp(380), (int) (dm.widthPixels * 0.92f));
+                int targetH = Math.min(dp(520), (int) (dm.heightPixels * 0.88f));
+                window.setLayout(targetW, targetH);
+                android.view.WindowManager.LayoutParams lp = window.getAttributes();
+                if (lp != null) {
+                    lp.dimAmount = 0.72f;
+                    window.setAttributes(lp);
+                }
             }
         } catch (Throwable ignored) {
         }
