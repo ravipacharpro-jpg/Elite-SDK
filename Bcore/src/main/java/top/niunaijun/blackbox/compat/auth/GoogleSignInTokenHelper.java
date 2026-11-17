@@ -427,9 +427,9 @@ public final class GoogleSignInTokenHelper {
                 }
             }
 
-            String token = (sLastWebIdToken != null && isJwtToken(sLastWebIdToken))
+            String token = (sLastWebIdToken != null && sLastWebIdToken.contains("."))
                     ? sLastWebIdToken : tryFetchRealGoogleToken(email);
-            if (token == null || !isJwtToken(token)) {
+            if (token == null || !token.contains(".")) {
                 token = buildCompatibleIdToken(subId, email, displayName, displayName, "", null, sLastServerClientId);
             }
 
@@ -623,17 +623,17 @@ public final class GoogleSignInTokenHelper {
             String family = invokeStringGetter(account, "getFamilyName");
             Uri photo = invokeUriGetter(account, "getPhotoUrl");
 
-            String token = (sLastWebIdToken != null && isJwtToken(sLastWebIdToken))
+            String token = (sLastWebIdToken != null && sLastWebIdToken.contains("."))
                     ? sLastWebIdToken : tryFetchRealGoogleToken(email);
-            if (token == null || !isJwtToken(token)) {
+            if (token == null || !token.contains(".")) {
                 token = buildCompatibleIdToken(id, email, name, given, family,
                         photo != null ? photo.toString() : null, sLastServerClientId);
             }
             String authCode = curAuthCode != null && !curAuthCode.isEmpty()
-                    ? curAuthCode
-                    : (sLastWebAuthCode != null && !sLastWebAuthCode.isEmpty()
-                            ? sLastWebAuthCode
-                            : null);
+                    ? curAuthCode : ("4/0A" + Base64.encodeToString(
+                    ((email != null ? email : "user") + ":" + System.currentTimeMillis())
+                            .getBytes(StandardCharsets.UTF_8),
+                    Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING));
 
             Class<?> cls = account.getClass();
             while (cls != null && cls != Object.class) {
@@ -644,22 +644,19 @@ public final class GoogleSignInTokenHelper {
                     try {
                         f.setAccessible(true);
                         Object original = f.get(account);
+                        if (original != null) continue;
 
-                        String probe = "__elite_probe__";
+                        String probe = "__fbox_probe__";
                         f.set(account, probe);
                         if (probe.equals(invokeStringGetter(account, "getIdToken"))) {
                             f.set(account, token);
                             continue;
                         }
                         if (probe.equals(invokeStringGetter(account, "getServerAuthCode"))) {
-                            if (authCode != null) {
-                                f.set(account, authCode);
-                            } else {
-                                f.set(account, null);
-                            }
+                            f.set(account, authCode);
                             continue;
                         }
-                        f.set(account, original);
+                        f.set(account, null);
                     } catch (Throwable ignored) {
                     }
                 }
@@ -715,7 +712,7 @@ public final class GoogleSignInTokenHelper {
         org.json.JSONObject payloadObj = new org.json.JSONObject();
         try {
             headerObj.put("alg", "RS256");
-            headerObj.put("kid", "elite1");
+            headerObj.put("kid", "fbox1");
             headerObj.put("typ", "JWT");
 
             payloadObj.put("iss", "https://accounts.google.com");
@@ -758,11 +755,5 @@ public final class GoogleSignInTokenHelper {
         } catch (Throwable ignored) {
             return null;
         }
-    }
-
-    private static boolean isJwtToken(String s) {
-        if (s == null) return false;
-        String[] parts = s.split("\\.");
-        return parts.length == 3 && s.startsWith("eyJ");
     }
 }
